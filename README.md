@@ -107,7 +107,7 @@ src/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/job-platform.git
+git clone https://github.com/seifbenkarim10/job-platform.git
 cd job-platform
 ```
 
