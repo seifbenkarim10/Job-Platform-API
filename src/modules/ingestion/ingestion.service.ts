@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
@@ -11,16 +11,21 @@ import { NormalizedJob } from './normalizers/job.normalizer';
 import { SkillsService } from '../skills/skills.service';
 import { RemoteOkProvider } from './providers/remoteok.provider';
 import { ArbeitnowProvider } from './providers/arbeitnow.provider';
+import { SearchService, JobDocument as MeiliJobDocument, } from '../search/search.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+
 
 @Injectable()
 export class IngestionService {
   private readonly logger = new Logger(IngestionService.name);
 
   constructor(
+    private readonly searchService: SearchService,
     @InjectModel(Job.name) private jobModel: Model<JobDocument>,
     @InjectModel(Source.name) private sourceModel: Model<SourceDocument>,
     private companiesService: CompaniesService,
     private skillsService: SkillsService,
+    @Inject(CACHE_MANAGER) private cacheManager: any,
     private remotive: RemotiveProvider,
     private adzuna: AdzunaProvider,
     private arbeitnow: ArbeitnowProvider,
@@ -38,6 +43,9 @@ export class IngestionService {
       this.runSource('Arbeitnow', () => this.arbeitnow.fetch()),
       this.runSource('RemoteOK', () => this.remoteok.fetch()),
     ]);
+    // clear cache after ingestion so fresh data is served
+    await (this.cacheManager as any).reset();
+    this.logger.log('Cache cleared after ingestion');
 
     return results
       .filter((r) => r.status === 'fulfilled')
@@ -118,7 +126,46 @@ export class IngestionService {
     await this.sourceModel.findByIdAndUpdate(source._id, {
       lastScrapedAt: new Date(),
     });
+    await this.syncToMeilisearch(sourceName, source._id.toString());
+
     this.logger.log(`${sourceName}: saved=${saved} skipped=${skipped}`);
     return { source: sourceName, saved, skipped };
+  }
+
+  private async syncToMeilisearch(sourceName: string, sourceId: string) {
+    try {
+      const jobs = await this.jobModel
+        .find({ source: sourceId, isActive: true })
+        .populate('company', 'name logo')
+        .populate('skills', 'name')
+        .lean();
+
+      const docs: MeiliJobDocument[] = jobs.map((job: any) => ({
+        id: job._id.toString(),
+        title: job.title,
+        description: job.description,
+        companyName: job.company?.name ?? '',
+        companyLogo: job.company?.logo,
+        location: job.location,
+        isRemote: job.isRemote,
+        type: job.type,
+        experienceLevel: job.experienceLevel,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        salaryCurrency: job.salaryCurrency,
+        applyUrl: job.applyUrl,
+        skills: job.skills?.map((s: any) => s.name) ?? [],
+        sourceName,
+        postedAt: job.postedAt?.toISOString() ?? new Date().toISOString(),
+        isActive: job.isActive,
+      }));
+
+      await this.searchService.indexJobs(docs);
+    } catch (err: any) {
+      this.logger.error(
+        `Meilisearch sync failed for ${sourceName}`,
+        err?.message,
+      );
+    }
   }
 }

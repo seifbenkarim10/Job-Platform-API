@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -13,6 +13,10 @@ import { BullModule } from '@nestjs/bull';
 import { QueueModule } from './modules/queue/queue.module';
 import { BullBoardModule } from '@bull-board/nestjs';
 import { ExpressAdapter } from '@bull-board/express';
+import { SearchModule } from './modules/search/search.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import * as redisStore from 'cache-manager-redis-store';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
   imports: [
@@ -39,13 +43,29 @@ import { ExpressAdapter } from '@bull-board/express';
         },
       }),
     }),
+    // Redis cache
+    CacheModule.registerAsync({
+      isGlobal: true,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        store: redisStore,
+        host: config.get<string>('redis.host'),
+        port: config.get<number>('redis.port'),
+        ttl: 300, // 5 minutes default
+      }),
+    }),
     TerminusModule,
     JobsModule,
     CompaniesModule,
     IngestionModule,
     QueueModule,
+    SearchModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+  }
+}

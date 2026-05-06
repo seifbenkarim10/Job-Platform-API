@@ -14,6 +14,7 @@ import { ArbeitnowProvider } from './providers/arbeitnow.provider';
 import { RemoteOkProvider } from './providers/remoteok.provider';
 import { BullModule } from '@nestjs/bull';
 import { INGESTION_QUEUE } from '../queue/queue.constants';
+import { SearchModule } from '../search/search.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { INGESTION_QUEUE } from '../queue/queue.constants';
     ]),
     CompaniesModule,
     SkillsModule,
+    SearchModule,
   ],
   controllers: [IngestionController],
   providers: [

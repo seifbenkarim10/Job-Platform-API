@@ -21,6 +21,19 @@ services:
     volumes:
       - redis_data:/data
 
+  meilisearch:
+      image: getmeili/meilisearch:v1.7
+      container_name: job-platform-meilisearch
+      restart: unless-stopped
+      ports:
+        - '7700:7700'
+      volumes:
+        - meili_data:/meili_data
+      environment:
+        MEILI_MASTER_KEY: masterKey123
+        MEILI_ENV: development
+
 volumes:
   mongo_data:
   redis_data:
+  meili_data:
